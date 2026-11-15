@@ -353,7 +353,7 @@ function openForm(o) {
     else if (fd.type === "select") { inp = el("select"); for (const [v, t] of fd.options) { const op = el("option", "", t); op.value = v; inp.appendChild(op); } }
     else { inp = el("input"); inp.type = fd.type === "check" ? "checkbox" : "text"; if (fd.type !== "check") inp.maxLength = fd.max || 100; }
     if (fd.type === "check") inp.checked = !!fd.value; else inp.value = fd.value || "";
-    if (fd.ph) inp.placeholder = fd.ltr ? fd.ph : "‫" + fd.ph + "‬";
+    if (fd.ph) inp.placeholder = fd.ltr ? fd.ph : "\\u202B" + fd.ph + "\\u202C";
     if (fd.type !== "check" && fd.type !== "select") inp.dir = fd.ltr ? "ltr" : "auto";
     if (fd.type === "check") lab.append(inp, el("span", "", fd.label)); else lab.append(el("span", "", fd.label), inp);
     if (fd.list) {
@@ -401,3 +401,4 @@ function rename(id) {
   inp.onblur = () => setTimeout(() => end(true, true), 180);
   inp.focus(); inp.select();
 }
+
