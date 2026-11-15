@@ -155,7 +155,7 @@ function renderTools() {
     bb0.textContent = ""; bb0.append(icon(IC.branch), el("span", "", r.branch || "main"), icon(IC.down)); bb0.title = r.branch ? "הענף של השיחה" : "ענף ברירת המחדל";
   }
   const started = convItems(cur).length > 0;
-  $("text").placeholder = "‫" + (started ? "תשובה ל-Claude..." : code ? "תאר משימה או שאל שאלה" : "במה אפשר לעזור היום?") + "‬";
+  $("text").placeholder = "\\u202B" + (started ? "תשובה ל-Claude..." : code ? "תאר משימה או שאל שאלה" : "במה אפשר לעזור היום?") + "\\u202C";
   const mb = $("modeBtn"); mb.textContent = ""; mb.append(el("span", "", code ? "Code" : "Claude"), icon(IC.down));
   const qa = $("qa"), show = code && started;
   qa.classList.toggle("hide", !show);
@@ -188,7 +188,7 @@ function repoMenu(anchor, index) {
   const rows = all.map((r) => [r, IC.repo, () => pick(r), r === curR ? "cur" : ""]);
   if (at >= 0) rows.push(null, [list.length > 1 ? "הסרת המאגר הזה" : "אין מאגר", null, () => pick(""), curR ? "" : "cur"]);
   showMenu(anchor, rows, (m) => {
-    const box = el("div", "ms"), inp = el("input"); inp.type = "search"; inp.dir = "ltr"; inp.placeholder = "‫חיפוש מאגרים…‬"; inp.setAttribute("aria-label", "חיפוש מאגרים");
+    const box = el("div", "ms"), inp = el("input"); inp.type = "search"; inp.dir = "ltr"; inp.placeholder = "\\u202Bחיפוש מאגרים…\\u202C"; inp.setAttribute("aria-label", "חיפוש מאגרים");
     box.append(icon(IC.search), inp); m.prepend(box);
     const note = el("div", "mf", "מאגר שלא ברשימה? כתוב את שמו (או owner/name) ולחץ Enter."); note.dir = "rtl"; m.appendChild(note);
     inp.oninput = () => { const q = inp.value.trim().toLowerCase(); for (const b of m.querySelectorAll("button")) { const t = b.textContent.toLowerCase(); b.hidden = !!q && t.includes("/") && !t.includes(q); } };
@@ -206,7 +206,7 @@ function branchMenu(anchor) {
   const rows = [["ענף ברירת המחדל", IC.branch, () => setB(""), r.branch ? "" : "cur"]];
   if (r.branch) rows.push([r.branch, IC.branch, () => setB(r.branch), "cur"]);
   showMenu(anchor, rows, (m) => {
-    const box = el("div", "ms"), inp = el("input"); inp.type = "text"; inp.dir = "ltr"; inp.maxLength = 80; inp.placeholder = "‫שם ענף אחר…‬"; inp.setAttribute("aria-label", "שם הענף");
+    const box = el("div", "ms"), inp = el("input"); inp.type = "text"; inp.dir = "ltr"; inp.maxLength = 80; inp.placeholder = "\\u202Bשם ענף אחר…\\u202C"; inp.setAttribute("aria-label", "שם הענף");
     box.append(icon(IC.branch), inp); m.prepend(box);
     inp.onkeydown = (e) => { if (e.key !== "Enter") return; e.preventDefault(); e.stopPropagation(); const v = inp.value.trim(); hideMenu(true); if (v) setB(v); };
     return inp;
@@ -371,3 +371,4 @@ async function copy(text, btn) {
   if (btn) { const sv = btn.querySelector("svg"); if (sv) { sv.replaceWith(icon(IC.ok)); setTimeout(() => { const s2 = btn.querySelector("svg"); if (s2) s2.replaceWith(icon(IC.copy)); }, 1500); } }
   toast("הועתק");
 }
+
