@@ -6,7 +6,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 const TARGET = "https://yemot-mail.smwlyqswkwt232.workers.dev/chatsite/";
 const GH_ORIGIN = "https://shmuel-lamed.github.io";
 const FN = "/chat-netfree";
-const OPS = /^\/(login|logout|spaces|messages|thread|file|read|send|summary|mute|react|edit|delete|people|dm|members|reactors|group|addmember|removemember|leave|rename|unread|pin|claude_send|claude_history)$/;
+const OPS = /^\/(login|logout|spaces|messages|thread|file|read|send|summary|mute|react|edit|delete|people|dm|members|reactors|group|addmember|removemember|leave|rename|unread|pin|claude_send|claude_history|claude_upload)$/;
 
 const cors = () => ({
   "access-control-allow-origin": GH_ORIGIN,

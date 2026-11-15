@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self' https://ydcfafijktzasrkkxyux.supabase.co; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="robots" content="noindex">
+<title>העלאת קבצים ל-Claude</title>
+<style>
+:root { color-scheme: light dark; --bg: #faf9f5; --card: #fff; --ink: #1f1e1d; --dim: #6b6a68; --line: #e3e1d9; --acc: #c96442; --ok: #2e7d4f; --err: #b3261e; }
+@media (prefers-color-scheme: dark) { :root { --bg: #1f1e1d; --card: #2a2927; --ink: #f3f1ea; --dim: #a9a79f; --line: #3d3b37; --ok: #6cc391; --err: #f2847c; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, "Segoe UI", Arial, sans-serif; }
+main { max-width: 640px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+p.sub { margin: 0 0 20px; color: var(--dim); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 14px; }
+label { font-weight: 600; display: grid; gap: 6px; }
+textarea { width: 100%; min-height: 90px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); font: inherit; resize: vertical; }
+button, .pick { font: inherit; font-weight: 600; border-radius: 10px; padding: 12px 16px; cursor: pointer; border: 1px solid var(--line); background: var(--bg); color: var(--ink); text-align: center; }
+button.go { background: var(--acc); border-color: var(--acc); color: #fff; }
+button:disabled { opacity: .5; cursor: default; }
+input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.pick:focus-within, button:focus-visible, textarea:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+li { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; display: grid; gap: 6px; }
+li .row { display: flex; gap: 10px; align-items: center; }
+li .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+li .meta { color: var(--dim); font-size: 14px; white-space: nowrap; }
+li button { padding: 2px 10px; font-weight: 400; }
+.bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.bar > i { display: block; height: 100%; width: 0; background: var(--acc); transition: width .2s; }
+#status { min-height: 24px; margin: 0; }
+#status.ok { color: var(--ok); font-weight: 600; } #status.err { color: var(--err); font-weight: 600; }
+a { color: var(--acc); }
+.foot { margin-top: 16px; color: var(--dim); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>העלאת קבצים ל-Claude</h1>
+  <p class="sub">אפשר להעלות כל קובץ, עד 100 מגה לקובץ. הקבצים נשמרים שלושה ימים.</p>
+  <form class="card" id="form">
+    <label class="pick" for="file">בחירת קבצים<input type="file" id="file" multiple></label>
+    <ul id="list" aria-live="polite"></ul>
+    <label for="text">מה לעשות עם הקבצים?
+      <textarea id="text" dir="auto" placeholder="לדוגמה: תדחוס את הקבצים לקובץ אחד ותעלה לדרייב שלי"></textarea>
+    </label>
+    <button type="submit" class="go" id="send" disabled>העלאה ושליחה ל-Claude</button>
+    <p id="status" role="status"></p>
+  </form>
+  <p class="foot">התשובה של Claude תופיע ב<a href="./claude.html">דף השיחה עם Claude</a>. <a href="./">חזרה לצ'אט</a></p>
+</main>
+<script>
+"use strict";
+// דף העלאת קבצים ל-Claude: כל קובץ עולה בחלקים של 3 מגה דרך הגשר ב-Supabase (claude_upload),
+// ובסוף נשלחת הודעה רגילה (claude_send) עם המזהים של הקבצים. הריצה של Claude מורידה אותם מ-/bridge/file.
+const API = "https://ydcfafijktzasrkkxyux.supabase.co/functions/v1/chat-netfree/";
+const UP_CHUNK = 3 * 1024 * 1024, UP_MAX = 100 * 1024 * 1024, MAX_FILES = 10;
+const $ = (id) => document.getElementById(id);
+let token = "";
+try { token = localStorage.getItem("chat_token") || ""; } catch (e) {}
+if (!token) location.replace("./");
+let files = [], busy = false;
+const sizeLabel = (n) => (n >= 1048576 ? (n / 1048576).toFixed(1) + " מגה" : Math.max(1, Math.round(n / 1024)) + " ק״ב");
+const newId = () => "f" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+function status(t, cls) { const s = $("status"); s.textContent = t; s.className = cls || ""; }
+function render() {
+  const ul = $("list"); ul.textContent = "";
+  files.forEach((x, i) => {
+    const li = document.createElement("li"), row = document.createElement("div"); row.className = "row";
+    const name = document.createElement("span"); name.className = "name"; name.dir = "auto"; name.textContent = x.name;
+    const meta = document.createElement("span"); meta.className = "meta"; meta.textContent = x.done ? "עלה" : x.pct ? x.pct + "%" : sizeLabel(x.f.size);
+    row.append(name, meta);
+    if (!busy) { const b = document.createElement("button"); b.type = "button"; b.textContent = "הסרה"; b.setAttribute("aria-label", "הסרת " + x.name); b.onclick = () => { files.splice(i, 1); render(); }; row.append(b); }
+    li.append(row);
+    if (busy || x.done) { const bar = document.createElement("div"); bar.className = "bar"; const fill = document.createElement("i"); fill.style.width = (x.done ? 100 : x.pct) + "%"; bar.append(fill); li.append(bar); }
+    ul.append(li);
+  });
+  $("send").disabled = busy || !files.length;
+}
+$("file").onchange = (e) => {
+  for (const f of [...e.target.files]) {
+    if (!f.size) { status("הקובץ " + f.name + " ריק", "err"); continue; }
+    if (f.size > UP_MAX) { status("הקובץ " + f.name + " גדול מדי – אפשר עד 100 מגה", "err"); continue; }
+    if (files.length >= MAX_FILES) { status("אפשר עד " + MAX_FILES + " קבצים בכל פעם", "err"); break; }
+    files.push({ f, name: f.name.replace(/[\]\n|]/g, " "), id: newId(), parts: Math.ceil(f.size / UP_CHUNK), pct: 0, done: false });
+  }
+  e.target.value = ""; render();
+};
+async function call(op, query, body) {
+  let err;
+  for (let t = 0; t < 3; t++) {
+    try {
+      const r = await fetch(API + op + "?token=" + encodeURIComponent(token) + (query || ""), { method: "POST", headers: { "content-type": "text/plain;charset=UTF-8" }, body });
+      const j = await r.json().catch(() => ({ error: "תקלה בחיבור" }));
+      if (r.status === 401) { try { localStorage.removeItem("chat_token"); } catch (e) {} location.replace("./"); throw new Error("צריך להיכנס מחדש"); }
+      if (r.ok && !j.error) return j;
+      err = new Error(j.error || "תקלה");
+      if (r.status < 500) break;
+    } catch (e) { err = err || new Error("אין חיבור לשרת"); }
+  }
+  throw err;
+}
+$("form").onsubmit = async (e) => {
+  e.preventDefault();
+  if (busy || !files.length) return;
+  busy = true; render();
+  try {
+    for (const x of files) {
+      if (x.done) continue;
+      status("מעלה את " + x.name + "...");
+      for (let i = 0; i < x.parts; i++) {
+        await call("claude_upload", "&id=" + x.id + "&part=" + i + "&parts=" + x.parts + "&size=" + x.f.size + "&name=" + encodeURIComponent(x.name) + "&type=" + encodeURIComponent(x.f.type || ""), x.f.slice(i * UP_CHUNK, (i + 1) * UP_CHUNK));
+        x.pct = Math.round(((i + 1) / x.parts) * 100); render();
+      }
+      x.done = true; render();
+    }
+    status("שולח את ההודעה ל-Claude...");
+    const text = ($("text").value.trim() || "העליתי קבצים") + files.map((x) => "\n\n[קובץ שהועלה: " + x.name + " | " + sizeLabel(x.f.size) + " | מזהה: " + x.id + " | חלקים: " + x.parts + "]").join("");
+    await call("claude_send", "", JSON.stringify({ text, conv: "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6) }));
+    const n = files.length; files = []; $("text").value = ""; busy = false; render();
+    status(n === 1 ? "הקובץ עלה וההודעה נשלחה ל-Claude." : n + " קבצים עלו וההודעה נשלחה ל-Claude.", "ok");
+  } catch (err) {
+    busy = false; render();
+    status("לא הצלחתי: " + err.message + ". אפשר ללחוץ שוב כדי להמשיך.", "err");
+  }
+};
+render();
+</script>
+</body>
+</html>
