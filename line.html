@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src https://ydcfafijktzasrkkxyux.supabase.co; img-src data:; base-uri 'none'; form-action 'none'">
+<title>שיחות מהקו</title>
+<script>try{var p=JSON.parse(localStorage.getItem("claude_prefs")||"null")||JSON.parse(localStorage.getItem("chat_prefs")||"{}")||{},t=p.theme;document.documentElement.dataset.theme=t==="dark"||(t!=="light"&&matchMedia("(prefers-color-scheme:dark)").matches)?"dark":"light"}catch(e){}</script>
+<style>
+:root{--bg:#fff;--panel:#f5f4f1;--ink:rgba(0,0,0,.9);--mute:rgba(0,0,0,.5);--line:rgba(0,0,0,.1);--acc:#c6613f;--me:#efe9e3;--hover:rgba(0,0,0,.05)}
+:root[data-theme=dark]{--bg:#191919;--panel:#262626;--ink:rgba(255,255,255,.93);--mute:rgba(255,255,255,.5);--line:rgba(255,255,255,.12);--acc:#d97757;--me:#3a332e;--hover:rgba(255,255,255,.07)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,"Segoe UI",Arial,sans-serif}
+header{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--line);z-index:1}
+.bar{max-width:760px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+h1{font-size:19px;margin:0;flex:1;min-width:140px}
+.btn{font:inherit;font-size:14px;color:var(--ink);background:none;border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer;text-decoration:none}
+.btn:hover{background:var(--hover)}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+main{max-width:760px;margin:0 auto;padding:8px 16px 60px}
+#status{color:var(--mute);font-size:14px;margin:14px 0}
+#status.err{color:var(--acc)}
+.day{text-align:center;color:var(--mute);font-size:13px;margin:22px 0 10px}
+.m{margin:0 0 12px;display:flex;flex-direction:column;align-items:flex-start}
+.m.me{align-items:flex-end}
+.b{max-width:88%;padding:9px 13px;border-radius:14px;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--panel)}
+.m.me .b{background:var(--me)}
+.w{font-size:12px;color:var(--mute);margin:2px 6px 0}
+.tag{color:var(--acc);font-weight:600}
+</style>
+</head>
+<body>
+<header><div class="bar">
+  <h1>שיחות מהקו</h1>
+  <button class="btn" id="refresh" type="button">רענון</button>
+  <a class="btn" href="claude.html">חזרה לשיחות באתר</a>
+</div></header>
+<main>
+  <p id="status" role="status">טוען…</p>
+  <div id="list"></div>
+</main>
+<script>
+"use strict";
+// דף נפרד שמציג את השיחות עם Claude בקו הטלפוני (קריאה בלבד). השיחות באתר נשארות ברשימה הרגילה ב-claude.html.
+const API = "https://ydcfafijktzasrkkxyux.supabase.co/functions/v1/chat-netfree/";
+let token = "";
+try { token = localStorage.getItem("chat_token") || ""; } catch (e) {}
+if (!token) location.replace("./");
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => { const x = document.createElement(tag); if (cls) x.className = cls; if (text != null) x.textContent = text; return x; };
+const dayFmt = new Intl.DateTimeFormat("he-IL", { timeZone: "Asia/Jerusalem", weekday: "long", day: "numeric", month: "long" });
+const timeFmt = new Intl.DateTimeFormat("he-IL", { timeZone: "Asia/Jerusalem", hour: "2-digit", minute: "2-digit" });
+const KIND = { approval: "אישור" };
+function render(items) {
+  const list = $("list"); list.textContent = "";
+  let last = "";
+  for (const it of items) {
+    const d = new Date(it.at), day = dayFmt.format(d);
+    if (day !== last) { list.appendChild(el("div", "day", day)); last = day; }
+    const m = el("div", "m" + (it.from === "me" ? " me" : ""));
+    m.appendChild(el("div", "b", it.text)).dir = "auto";
+    const w = el("div", "w", (it.from === "me" ? "אני, בקו" : "Claude") + " · " + timeFmt.format(d));
+    if (KIND[it.kind]) { w.append(" · "); w.appendChild(el("span", "tag", KIND[it.kind])); }
+    m.appendChild(w); list.appendChild(m);
+  }
+}
+async function load(scroll) {
+  const st = $("status"); st.className = ""; st.textContent = "טוען…";
+  let r;
+  try { r = await fetch(API + "claude_history?line=1&token=" + encodeURIComponent(token)); }
+  catch (e) { st.className = "err"; st.textContent = "אין חיבור לשרת"; return; }
+  if (r.status === 401) { try { localStorage.removeItem("chat_token"); } catch (e) {} location.replace("./"); return; }
+  const j = await r.json().catch(() => ({ error: "תקלה בחיבור" }));
+  if (!r.ok || j.error || !Array.isArray(j.items)) { st.className = "err"; st.textContent = j.error || "השיחות מהקו עדיין לא זמינות"; return; }
+  render(j.items);
+  st.textContent = j.items.length ? "מוצגות " + j.items.length + " ההודעות האחרונות מהקו. הדף לקריאה בלבד." : "עדיין אין שיחות מהקו.";
+  if (scroll) scrollTo(0, document.body.scrollHeight);
+}
+$("refresh").onclick = () => load(true);
+load(true);
+</script>
+</body>
+</html>
