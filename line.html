@@ -19,7 +19,7 @@ h1{font-size:19px;margin:0;flex:1;min-width:140px}
 .btn{font:inherit;font-size:14px;color:var(--ink);background:none;border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer;text-decoration:none}
 .btn:hover{background:var(--hover)}
 :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
-main{max-width:760px;margin:0 auto;padding:8px 16px 60px}
+main{max-width:760px;margin:0 auto;padding:8px 16px 150px}
 #status{color:var(--mute);font-size:14px;margin:14px 0}
 #status.err{color:var(--acc)}
 .day{text-align:center;color:var(--mute);font-size:13px;margin:22px 0 10px}
@@ -29,6 +29,13 @@ main{max-width:760px;margin:0 auto;padding:8px 16px 60px}
 .m.me .b{background:var(--me)}
 .w{font-size:12px;color:var(--mute);margin:2px 6px 0}
 .tag{color:var(--acc);font-weight:600}
+footer{position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-top:1px solid var(--line)}
+.send{max-width:760px;margin:0 auto;padding:10px 16px calc(10px + env(safe-area-inset-bottom));display:flex;gap:8px;align-items:flex-end}
+#text{flex:1;font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:9px 12px;resize:none;min-height:44px;max-height:160px}
+#send{font:inherit;color:#fff;background:var(--acc);border:0;border-radius:12px;padding:10px 18px;cursor:pointer;min-height:44px}
+#send:disabled{opacity:.5;cursor:default}
+#sendst{max-width:760px;margin:0 auto;padding:0 16px 6px;font-size:13px;color:var(--mute)}
+#sendst.err{color:var(--acc)}
 </style>
 </head>
 <body>
@@ -41,9 +48,18 @@ main{max-width:760px;margin:0 auto;padding:8px 16px 60px}
   <p id="status" role="status">טוען…</p>
   <div id="list"></div>
 </main>
+<footer>
+  <div id="sendst" role="status"></div>
+  <div class="send">
+    <textarea id="text" rows="1" dir="auto" maxlength="4000" aria-label="תגובה ל-Claude" placeholder="כתבו תגובה ל-Claude…"></textarea>
+    <button id="send" type="button" disabled>שליחה</button>
+  </div>
+</footer>
 <script>
 "use strict";
-// דף נפרד שמציג את השיחות עם Claude בקו הטלפוני (קריאה בלבד). השיחות באתר נשארות ברשימה הרגילה ב-claude.html.
+// דף נפרד שמציג את השיחות עם Claude בקו הטלפוני, ואפשר גם להגיב בו בכתב.
+// תגובה מכאן נשלחת כהודעת אתר רגילה (claude_send) בשיחה קבועה בשם LINE_CONV, ולכן התשובה עליה מופיעה כאן ולא מוקראת בקו.
+const LINE_CONV = "linepage";
 const API = "https://ydcfafijktzasrkkxyux.supabase.co/functions/v1/chat-netfree/";
 let token = "";
 try { token = localStorage.getItem("chat_token") || ""; } catch (e) {}
@@ -61,23 +77,62 @@ function render(items) {
     if (day !== last) { list.appendChild(el("div", "day", day)); last = day; }
     const m = el("div", "m" + (it.from === "me" ? " me" : ""));
     m.appendChild(el("div", "b", it.text)).dir = "auto";
-    const w = el("div", "w", (it.from === "me" ? "אני, בקו" : "Claude") + " · " + timeFmt.format(d));
+    const w = el("div", "w", (it.from === "me" ? (it.site ? "אני, מהאתר" : "אני, בקו") : "Claude") + " · " + timeFmt.format(d));
+    if (it.wait) { w.append(" · "); w.appendChild(el("span", "tag", "ממתין לתשובה")); }
     if (KIND[it.kind]) { w.append(" · "); w.appendChild(el("span", "tag", KIND[it.kind])); }
     m.appendChild(w); list.appendChild(m);
   }
 }
-async function load(scroll) {
-  const st = $("status"); st.className = ""; st.textContent = "טוען…";
-  let r;
-  try { r = await fetch(API + "claude_history?line=1&token=" + encodeURIComponent(token)); }
-  catch (e) { st.className = "err"; st.textContent = "אין חיבור לשרת"; return; }
-  if (r.status === 401) { try { localStorage.removeItem("chat_token"); } catch (e) {} location.replace("./"); return; }
+const get = async (q) => {
+  const r = await fetch(API + "claude_history?" + q + "token=" + encodeURIComponent(token));
+  if (r.status === 401) { try { localStorage.removeItem("chat_token"); } catch (e) {} location.replace("./"); throw new Error("401"); }
   const j = await r.json().catch(() => ({ error: "תקלה בחיבור" }));
-  if (!r.ok || j.error || !Array.isArray(j.items)) { st.className = "err"; st.textContent = j.error || "השיחות מהקו עדיין לא זמינות"; return; }
-  render(j.items);
-  st.textContent = j.items.length ? "מוצגות " + j.items.length + " ההודעות האחרונות מהקו. הדף לקריאה בלבד." : "עדיין אין שיחות מהקו.";
-  if (scroll) scrollTo(0, document.body.scrollHeight);
+  if (!r.ok || j.error || !Array.isArray(j.items)) throw new Error(j.error || "השיחות מהקו עדיין לא זמינות");
+  return j.items;
+};
+let timer = 0, busy = false;
+async function load(scroll, quiet) {
+  const st = $("status");
+  if (!quiet) { st.className = ""; st.textContent = "טוען…"; }
+  let line, site = [];
+  try { line = await get("line=1&"); }
+  catch (e) { if (e.message !== "401" && !quiet) { st.className = "err"; st.textContent = e instanceof TypeError ? "אין חיבור לשרת" : e.message; } return; }
+  // התגובות שנכתבו בדף הזה והתשובות עליהן. אם הן לא נטענו, השיחות מהקו עדיין מוצגות.
+  try { site = (await get("")).filter((m) => m.conv === LINE_CONV); } catch (e) { if (e.message === "401") return; }
+  const answered = new Set(site.filter((m) => m.from !== "me").map((m) => m.re));
+  const mine = site.map((m) => ({ id: m.id, from: m.from === "me" ? "me" : "claude", site: true, text: m.text, at: m.at, wait: m.from === "me" && !answered.has(m.id) }));
+  const items = [...line, ...mine].sort((a, b) => a.at - b.at);
+  const near = innerHeight + scrollY >= document.body.scrollHeight - 80;
+  render(items);
+  st.className = "";
+  st.textContent = items.length ? "מוצגות " + items.length + " ההודעות האחרונות. אפשר להגיב בתיבה שלמטה." : "עדיין אין שיחות מהקו.";
+  if (scroll || near) scrollTo(0, document.body.scrollHeight);
+  // כל עוד תגובה מחכה לתשובה, הדף מתרענן לבד כל חצי דקה
+  clearTimeout(timer);
+  if (mine.some((m) => m.wait)) timer = setTimeout(() => { if (!document.hidden) load(false, true); else timer = setTimeout(() => load(false, true), 30000); }, 30000);
 }
+const text = $("text"), sendBtn = $("send"), sendSt = $("sendst");
+const grow = () => { text.style.height = "auto"; text.style.height = Math.min(160, text.scrollHeight + 2) + "px"; };
+const upd = () => { sendBtn.disabled = busy || !text.value.trim(); };
+text.addEventListener("input", () => { grow(); upd(); });
+text.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
+async function send() {
+  const t = text.value.trim();
+  if (!t || busy) return;
+  busy = true; upd(); sendSt.className = ""; sendSt.textContent = "שולח…";
+  try {
+    const r = await fetch(API + "claude_send?token=" + encodeURIComponent(token), { method: "POST", headers: { "content-type": "text/plain;charset=UTF-8" }, body: JSON.stringify({ text: t, conv: LINE_CONV }) });
+    if (r.status === 401) { try { localStorage.removeItem("chat_token"); } catch (e) {} location.replace("./"); return; }
+    const j = await r.json().catch(() => ({ error: "תקלה בחיבור" }));
+    if (!r.ok || j.error) throw new Error(j.error || "השליחה נכשלה");
+    text.value = ""; grow();
+    sendSt.textContent = "נשלח. התשובה תופיע כאן כש-Claude יענה.";
+    await load(true, true);
+  } catch (e) {
+    sendSt.className = "err"; sendSt.textContent = e instanceof TypeError ? "אין חיבור לשרת. ההודעה לא נשלחה." : e.message;
+  } finally { busy = false; upd(); }
+}
+sendBtn.onclick = send;
 $("refresh").onclick = () => load(true);
 load(true);
 </script>
